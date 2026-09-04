@@ -4,6 +4,43 @@ Soufiw:Loader({ Name = "Soufiw", Duration = 4 });
 Notification:Notify({ Title = "Soufiw", Content = "Hello, " .. game.Players.LocalPlayer.DisplayName .. " Welcome back!", Icon = "clipboard" });
 
 local Window = Soufiw.new({ Name = "Soufiw", Expire = "never" });
+
+-- ===== КАСТОМНЫЙ КУРСОР =====
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+local uis = game:GetService("UserInputService")
+
+pcall(function()
+    mouse.Icon = "rbxasset://textures/GuiNone.png"
+end)
+
+local customCursor = Instance.new("ImageLabel")
+customCursor.Size = UDim2.new(0, 32, 0, 32)
+customCursor.BackgroundTransparency = 1
+customCursor.Image = "rbxassetid://12743852986"
+customCursor.ZIndex = 999
+customCursor.Parent = game.CoreGui
+
+local function updateCursor()
+    local pos = uis:GetMouseLocation()
+    customCursor.Position = UDim2.new(0, pos.X - 16, 0, pos.Y - 16)
+end
+
+uis.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        updateCursor()
+    end
+end)
+
+game:GetService("RunService").RenderStepped:Connect(updateCursor)
+
+pcall(function()
+    local starterGui = game:GetService("StarterGui")
+    starterGui:SetCore("MouseIconEnabled", false)
+end)
+
+print("Custom cursor enabled!")
+
 local movement = Window:AddMenu({ Name = "movement", Icon = "cloud" });
 local General = movement:AddSection({ Position = "left", Name = "GENERAL" });
 local Visual = Window:AddMenu({ Name = "visual", Icon = "eye" });
@@ -92,34 +129,137 @@ General:AddToggle({
     end
 })
 
-local speedSlider;
-local currentSpeed = 16;
-speedSlider = General:AddSlider({
+-- ===== SPEEDHACK (2 метода) =====
+local speedMethod = "WalkSpeed"
+local currentSpeed = 16
+local speedConnection = nil
+local speedhackEnabled = false
+
+local function applyCFrameSpeed(character, speed)
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    if speedConnection then
+        speedConnection:Disconnect()
+        speedConnection = nil
+    end
+    
+    if speedMethod == "CFrame" and speed > 16 and speedhackEnabled then
+        local moveSpeed = speed / 16
+        local stepSize = 0.3 * moveSpeed
+        local uis = game:GetService("UserInputService")
+        
+        speedConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not humanoid.Parent then 
+                speedConnection:Disconnect()
+                speedConnection = nil
+                return 
+            end
+            
+            local moveVector = Vector3.zero
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            
+            local forward = camera.CFrame.LookVector
+            local right = camera.CFrame.RightVector
+            forward = Vector3.new(forward.X, 0, forward.Z).Unit
+            right = Vector3.new(right.X, 0, right.Z).Unit
+            
+            if uis:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + forward end
+            if uis:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - forward end
+            if uis:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector - right end
+            if uis:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + right end
+            
+            if moveVector.Magnitude > 0 then
+                moveVector = moveVector.Unit * stepSize
+                hrp.CFrame = hrp.CFrame + moveVector
+                hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+            end
+        end)
+    end
+end
+
+local function applyWalkSpeed(character, speed)
+    if not character then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        humanoid.WalkSpeed = speed
+    end
+end
+
+local function applySpeed(character)
+    if not character or not speedhackEnabled then return end
+    
+    if speedMethod == "WalkSpeed" then
+        if speedConnection then
+            speedConnection:Disconnect()
+            speedConnection = nil
+        end
+        applyWalkSpeed(character, currentSpeed)
+    else
+        applyWalkSpeed(character, 16)
+        applyCFrameSpeed(character, currentSpeed)
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    task.wait(0.1)
+    if speedhackEnabled then
+        applySpeed(character)
+    end
+end)
+
+local speedToggle = General:AddToggle({
     Name = "Speedhack",
+    Option = true,
+    Callback = function(state)
+        speedhackEnabled = state
+        if state then
+            applySpeed(player.Character)
+        else
+            if speedConnection then
+                speedConnection:Disconnect()
+                speedConnection = nil
+            end
+            applyWalkSpeed(player.Character, 16)
+        end
+    end
+})
+
+General:AddSlider({
+    Name = "Speed Value",
     Default = 16,
     Min = 1,
     Max = 256,
     Round = 0,
     Callback = function(value)
-        currentSpeed = value;
-        local player = game.Players.LocalPlayer;
-        local character = player.Character;
-        if character then
-            local humanoid = character:FindFirstChild("Humanoid")
-            if humanoid then humanoid.WalkSpeed = value end
+        currentSpeed = value
+        local character = player.Character
+        if character and speedhackEnabled then
+            applySpeed(character)
         end
     end
-});
-local function applySpeed(character)
-    if not character then return end;
-    local humanoid = character:WaitForChild("Humanoid")
-    if humanoid then humanoid.WalkSpeed = currentSpeed end
-end;
-game.Players.LocalPlayer.CharacterAdded:Connect(applySpeed)
+})
 
-local jumpSlider;
+speedToggle.Option:AddDropdown({
+    Name = "Method",
+    Default = "WalkSpeed",
+    Values = {"WalkSpeed", "CFrame"},
+    Callback = function(value)
+        speedMethod = value
+        local character = player.Character
+        if character and speedhackEnabled then
+            applySpeed(character)
+        end
+    end
+})
+
+-- ===== JUMPHACK =====
 local currentJump = 50;
-jumpSlider = General:AddSlider({
+General:AddSlider({
     Name = "Jumphack",
     Default = 50,
     Min = 1,
@@ -142,6 +282,7 @@ local function applyJump(character)
 end;
 game.Players.LocalPlayer.CharacterAdded:Connect(applyJump)
 
+-- ===== INFINITE JUMP =====
 local infJumpActive = false;
 local infJumpConnection = nil;
 General:AddToggle({
@@ -163,6 +304,7 @@ General:AddToggle({
     end
 })
 
+-- ===== FLY =====
 local flyActive = false;
 local flyConnection = nil;
 local flyBodyVelocity = nil;
@@ -242,6 +384,7 @@ General:AddToggle({
     end
 })
 
+-- ===== AIRSWIM =====
 local airSwimActive = false;
 local airSwimConnection = nil;
 local airSwimBodyVelocity = nil;
@@ -334,6 +477,7 @@ General:AddToggle({
     end
 })
 
+-- ===== NOCLIP =====
 local noclipActive = false;
 local noclipConnections = {};
 local noclipCharAdded = nil;
@@ -1300,7 +1444,7 @@ local function isAimbotTargetVisible(player)
     if not char then return false end
     local camera = workspace.CurrentCamera
     if not camera then return false end
-    
+
     local targetPart = nil
     if aimbotHitbox == "Head" then
         targetPart = char:FindFirstChild("Head")
@@ -1311,7 +1455,7 @@ local function isAimbotTargetVisible(player)
         targetPart = char:FindFirstChild("HumanoidRootPart")
     end
     if not targetPart then return false end
-    
+
     local origin = camera.CFrame.Position
     local target = targetPart.Position
     local direction = (target - origin).Unit
@@ -1677,10 +1821,7 @@ aimbotToggle.Option:AddSlider({
     end
 })
 
-SilentSection:AddToggle({ Name = "Enable (not implemented)" })
-SilentSection:AddSlider({ Name = "FOV", Default = 30, Min = 1, Max = 360, Round = 0 })
-SilentSection:AddDropdown({ Name = "Hitbox", Default = "Head", Values = { "Head", "Torso", "Random" } })
-
+-- TEAM CHECK
 local teamCheck = AimbotSection:AddToggle({
     Name = "Team Check",
     Callback = function(state)
@@ -1688,12 +1829,135 @@ local teamCheck = AimbotSection:AddToggle({
     end
 })
 
+-- VISIBLE CHECK
 local aimbotVisCheck = AimbotSection:AddToggle({
     Name = "Visible Check",
     Callback = function(state)
         aimbotVisibleCheck = state
     end
 })
+
+-- ===== PREDICTION (УПРЕЖДЕНИЕ) =====
+local predictionEnabled = false
+local predictionMultiplier = 0.5
+
+local function getPredictedPosition(player)
+    local char = player.Character
+    if not char then return nil end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local targetPart = nil
+    if aimbotHitbox == "Head" then
+        targetPart = char:FindFirstChild("Head") or hrp
+    elseif aimbotHitbox == "Torso" then
+        targetPart = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso") or hrp
+    else
+        targetPart = hrp
+    end
+    if not targetPart then return nil end
+
+    local velocity = hrp.AssemblyLinearVelocity
+    local currentPos = targetPart.Position
+
+    local camera = workspace.CurrentCamera    if not camera then return currentPos end
+
+    local origin = camera.CFrame.Position
+    local distance = (currentPos - origin).Magnitude
+    local predictionTime = math.clamp(distance / 150, 0.05, 0.8) * predictionMultiplier
+
+    return currentPos + velocity * predictionTime
+end
+
+-- Переопределяем getClosestEnemyInFOV
+local oldGetClosest = getClosestEnemyInFOV
+getClosestEnemyInFOV = function()
+    local aimPoint = getAimPoint()
+    local camera = workspace.CurrentCamera
+    if not camera then return nil end
+
+    local maxDist = aimbotFOV * (camera.ViewportSize.X / 360)
+    local bestPlayer = nil
+    local bestScore = math.huge
+    local localRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player == localPlayer then continue end
+        if isTeammate(player) then continue end
+        if not isAimbotTargetVisible(player) then continue end
+
+        local char = player.Character
+        if not char then continue end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+
+        local targetPos = nil
+        if predictionEnabled then
+            targetPos = getPredictedPosition(player)
+        end
+
+        if not targetPos then
+            local targetPart = nil
+            if aimbotHitbox == "Head" then
+                targetPart = char:FindFirstChild("Head")
+            elseif aimbotHitbox == "Torso" then
+                targetPart = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+            end
+            if not targetPart then targetPart = hrp end
+            if not targetPart then continue end
+
+            targetPos = targetPart.Position
+        end
+
+        local screenPos, onScreen = camera:WorldToViewportPoint(targetPos)
+        if not onScreen then continue end
+
+        screenPos = Vector2.new(screenPos.X, screenPos.Y)
+        local dist = (screenPos - aimPoint).Magnitude
+        if dist >= maxDist then continue end
+
+        local score = dist
+        if localRoot then
+            local worldDist = (hrp.Position - localRoot.Position).Magnitude
+            score = score + worldDist * 0.05
+        end
+
+        if score < bestScore then
+            bestScore = score
+            bestPlayer = player
+        end
+    end
+    return bestPlayer
+end
+
+-- Добавляем Prediction в AIMBOT
+local predictionToggle = AimbotSection:AddToggle({
+    Name = "Prediction",
+    Callback = function(state)
+        predictionEnabled = state
+    end
+})
+
+AimbotSection:AddSlider({
+    Name = "Prediction Speed",
+    Default = 0.5,
+    Min = 0.1,
+    Max = 2,
+    Round = 1,
+    Callback = function(value)
+        predictionMultiplier = value
+    end
+})
+
+-- ===== SILENT AIM (not work) =====
+SilentSection:AddToggle({ Name = "Enable (not implemented)" })
+SilentSection:AddSlider({ Name = "FOV", Default = 30, Min = 1, Max = 360, Round = 0 })
+SilentSection:AddDropdown({ Name = "Hitbox", Default = "Head", Values = { "Head", "Torso", "Random" } })
 
 -- ===== MISC =====
 local fovChangerEnabled = false
@@ -1789,6 +2053,193 @@ PersonSection:AddSlider({
         if fovChangerEnabled then
             applyFOV(value)
         end
+    end
+})
+
+-- ===== FAKE JUMP (PERSON SECTION) =====
+local fakeJumpActive = false
+local originalJumpPower = 50
+local fakeJumpConnection = nil
+local fakeJumpInputConnection = nil
+local fakeJumpHeartbeatConnection = nil
+local player = game.Players.LocalPlayer
+local lastY = 0
+local isFalling = false
+
+local function applyFakeJump(character)
+    if not character then return end
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+
+    if fakeJumpActive and originalJumpPower == 50 then
+        originalJumpPower = humanoid.JumpPower
+    end
+
+    if fakeJumpActive then
+        humanoid.JumpPower = originalJumpPower
+    else
+        humanoid.JumpPower = math.abs(originalJumpPower)
+    end
+end
+
+local function teleportToGround(character)
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character}
+    
+    local origin = hrp.Position
+    local direction = Vector3.new(0, -1, 0)
+    local result = workspace:Raycast(origin, direction * 100, raycastParams)
+    
+    if result then
+        local groundY = result.Position.Y + 3.5
+        local newPos = Vector3.new(hrp.Position.X, groundY, hrp.Position.Z)
+        hrp.CFrame = CFrame.new(newPos)
+        hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+    end
+end
+
+local function toggleFakeJump(state)
+    fakeJumpActive = state
+    local character = player.Character
+
+    if state then
+        applyFakeJump(character)
+
+        if not fakeJumpConnection then
+            fakeJumpConnection = player.CharacterAdded:Connect(function(newChar)
+                applyFakeJump(newChar)
+            end)
+        end
+
+        lastY = 0
+        isFalling = false
+        if not fakeJumpHeartbeatConnection then
+            fakeJumpHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not fakeJumpActive then return end
+                local char = player.Character
+                if not char then return end
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                local humanoid = char:FindFirstChild("Humanoid")
+                if not humanoid then return end
+                
+                local currentY = hrp.Position.Y
+                local velocityY = hrp.AssemblyLinearVelocity.Y
+                
+                if humanoid:GetState() == Enum.HumanoidStateType.Jumping or 
+                   humanoid:GetState() == Enum.HumanoidStateType.Freefall or
+                   humanoid:GetState() == Enum.HumanoidStateType.Ragdoll then
+                    
+                    if velocityY < 0 and currentY < lastY then
+                        teleportToGround(char)
+                        humanoid:ChangeState("Landed")
+                    end
+                end
+                
+                lastY = currentY
+            end)
+        end
+
+        local uis = game:GetService("UserInputService")
+        if not fakeJumpInputConnection then
+            fakeJumpInputConnection = uis.InputBegan:Connect(function(input, gameProcessed)
+                if gameProcessed then return end
+                if input.KeyCode == Enum.KeyCode.Space and fakeJumpActive then
+                    local char = player.Character
+                    if char then
+                        local humanoid = char:FindFirstChild("Humanoid")
+                        if humanoid and humanoid.Jump then
+                            humanoid:ChangeState("Jumping")
+                        end
+                    end
+                end
+            end)
+        end
+
+    else
+        if fakeJumpConnection then
+            fakeJumpConnection:Disconnect()
+            fakeJumpConnection = nil
+        end
+        if fakeJumpInputConnection then
+            fakeJumpInputConnection:Disconnect()
+            fakeJumpInputConnection = nil
+        end
+        if fakeJumpHeartbeatConnection then
+            fakeJumpHeartbeatConnection:Disconnect()
+            fakeJumpHeartbeatConnection = nil
+        end
+
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.JumpPower = math.abs(originalJumpPower)
+            end
+        end
+        originalJumpPower = 50
+    end
+end
+
+PersonSection:AddToggle({
+    Name = "Fake Jump",
+    Callback = function(state)
+        toggleFakeJump(state)
+    end
+})
+
+-- ===== ANTI AIM (MISC) =====
+local AntiAimSection = Misc:AddSection({ Position = "center", Name = "ANTI AIM" })
+
+local spinBotActive = false
+local spinBotConnection = nil
+local spinSpeed = 50
+
+local function toggleSpinBot(state)
+    spinBotActive = state
+    
+    if state then
+        if not spinBotConnection then
+            spinBotConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                local character = player.Character
+                if not character then return end
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                local humanoid = character:FindFirstChild("Humanoid")
+                if not humanoid or humanoid.Health <= 0 then return end
+                
+                local currentCF = hrp.CFrame
+                local rotation = CFrame.Angles(0, math.rad(spinSpeed), 0)
+                hrp.CFrame = currentCF * rotation
+            end)
+        end
+    else
+        if spinBotConnection then
+            spinBotConnection:Disconnect()
+            spinBotConnection = nil
+        end
+    end
+end
+
+AntiAimSection:AddToggle({
+    Name = "Spin Bot",
+    Callback = function(state)
+        toggleSpinBot(state)
+    end
+})
+
+AntiAimSection:AddSlider({
+    Name = "Spin Speed",
+    Default = 50,
+    Min = 1,
+    Max = 360,
+    Round = 0,
+    Callback = function(value)
+        spinSpeed = value
     end
 })
 
@@ -2230,49 +2681,50 @@ CustomSection:AddLabel({
     Name = "Анимации видны всем игрокам!"
 })
 
--- ===== AUTOSAVE =====
--- ВНИМАНИЕ: Этот блок НЕ ТРОГАЕТ boxFill при загрузке!
--- boxFill сохраняется в файл, но при загрузке НЕ применяется,
--- чтобы избежать зависания ESP. ESP просто обновляет состояние через updateEspState().
+-- ===== AUTOSAVE (ЧЕРЕЗ ИНЖЕКТОР) =====
+local placeId = game.PlaceId or 0
+local saveKey = "Soufiw_Settings_" .. placeId
 
-local autosaveEnabled = true
-local autosaveInterval = 5
+print("[AutoSave] Запуск для PlaceId:", placeId)
 
-local function getAutosavePath()
-    return "Soufiw_" .. game.PlaceId .. "_autosave.txt"
-end
-
-local function saveAutosave()
-    if not autosaveEnabled then return end
-
-    local configData = {
-        currentSpeed = currentSpeed,
-        currentJump = currentJump,
-        noFallActive = noFallActive,
-        infJumpActive = infJumpActive,
-        flyActive = flyActive,
+local function saveSettings()
+    local settings = {
+        speedhack = speedhackEnabled,
+        speedValue = currentSpeed,
+        speedMethod = speedMethod,
+        noFall = noFallActive,
+        jumphack = currentJump,
+        infJump = infJumpActive,
+        fly = flyActive,
         flySpeed = flySpeed,
-        airSwimActive = airSwimActive,
+        airSwim = airSwimActive,
         airSwimSpeed = airSwimSpeed,
-        noclipActive = noclipActive,
-        espSettings = espSettings,
-        espBoxColor = { espBoxColor.R, espBoxColor.G, espBoxColor.B },
+        noclip = noclipActive,
+        espBox = espSettings.box,
+        espSkeleton = espSettings.skeleton,
+        espTracer = espSettings.tracer,
+        espHpbar = espSettings.hpbar,
+        espName = espSettings.name,
+        espTeamCheck = espSettings.teamCheck,
+        espVisibleCheck = espSettings.visibleCheck,
+        espBoxColor = {espBoxColor.R*255, espBoxColor.G*255, espBoxColor.B*255},
         espBoxTransparency = espBoxTransparency,
         espBoxThickness = espBoxThickness,
-        espSkeletonColor = { espSkeletonColor.R, espSkeletonColor.G, espSkeletonColor.B },
-        espSkeletonThickness = espSkeletonThickness,
+        espSkeletonColor = {espSkeletonColor.R*255, espSkeletonColor.G*255, espSkeletonColor.B*255},
         espSkeletonTransparency = espSkeletonTransparency,
-        espTracerColor = { espTracerColor.R, espTracerColor.G, espTracerColor.B },
-        espTracerThickness = espTracerThickness,
+        espSkeletonThickness = espSkeletonThickness,
+        espTracerColor = {espTracerColor.R*255, espTracerColor.G*255, espTracerColor.B*255},
         espTracerTransparency = espTracerTransparency,
-        espHpColor = { espHpColor.R, espHpColor.G, espHpColor.B },
+        espTracerThickness = espTracerThickness,
+        espHpColor = {espHpColor.R*255, espHpColor.G*255, espHpColor.B*255},
         espHpTransparency = espHpTransparency,
-        espNameColor = { espNameColor.R, espNameColor.G, espNameColor.B },
+        espHpBarWidth = espSettings.hpBarWidth,
+        espNameColor = {espNameColor.R*255, espNameColor.G*255, espNameColor.B*255},
         espNameSize = espNameSize,
         espNameOutline = espNameOutline,
         espNameTransparency = espNameTransparency,
         chamsEnabled = chamsEnabled,
-        chamsColor = { chamsColor.R, chamsColor.G, chamsColor.B },
+        chamsColor = {chamsColor.R*255, chamsColor.G*255, chamsColor.B*255},
         chamsStyle = chamsStyle,
         chamsFillTrans = chamsFillTrans,
         chamsOutlineTrans = chamsOutlineTrans,
@@ -2282,254 +2734,144 @@ local function saveAutosave()
         aimbotSmoothness = aimbotSmoothness,
         aimbotHitbox = aimbotHitbox,
         aimbotMode = aimbotMode,
+        fovColor = {fovColor.R*255, fovColor.G*255, fovColor.B*255},
+        fovTransparency = fovTransparency,
         teamCheckEnabled = teamCheckEnabled,
         aimbotVisibleCheck = aimbotVisibleCheck,
-        fovColor = { fovColor.R, fovColor.G, fovColor.B },
-        fovTransparency = fovTransparency,
+        predictionEnabled = predictionEnabled,
+        predictionMultiplier = predictionMultiplier,
         fovChangerEnabled = fovChangerEnabled,
         fovValue = fovValue,
-        customAnimationsEnabled = customAnimationsEnabled,
+        fakeJump = fakeJumpActive,
+        spinBot = spinBotActive,
+        spinSpeed = spinSpeed,
+        customAnimations = customAnimationsEnabled,
         currentAnimPack = currentAnimPack,
     }
-
-    local json = game:GetService("HttpService"):JSONEncode(configData)
-    writefile(getAutosavePath(), json)
+    
+    getgenv()[saveKey] = settings
+    print("[AutoSave] Сохранено для PlaceId:", placeId)
 end
 
-local function loadAutosaveData()
-    local path = getAutosavePath()
-    if not isfile(path) then return nil end
-
-    local json = readfile(path)
-    return game:GetService("HttpService"):JSONDecode(json)
-end
-
-local function applyAutosave()
-    local configData = loadAutosaveData()
-    if not configData then return end
-
-    currentSpeed = configData.currentSpeed or 16
-    currentJump = configData.currentJump or 50
-    noFallActive = configData.noFallActive or false
-    infJumpActive = configData.infJumpActive or false
-    flyActive = configData.flyActive or false
-    flySpeed = configData.flySpeed or 50
-    airSwimActive = configData.airSwimActive or false
-    airSwimSpeed = configData.airSwimSpeed or 30
-    noclipActive = configData.noclipActive or false
-
-    -- ЗАГРУЖАЕМ ВСЕ НАСТРОЙКИ ESP, КРОМЕ boxFill
-    -- boxFill НЕ загружается, чтобы не ломать отрисовку
-    if configData.espSettings then
-        espSettings.box = configData.espSettings.box or false
-        espSettings.skeleton = configData.espSettings.skeleton or false
-        espSettings.tracer = configData.espSettings.tracer or false
-        espSettings.hpbar = configData.espSettings.hpbar or false
-        espSettings.name = configData.espSettings.name or false
-        espSettings.hpBarWidth = configData.espSettings.hpBarWidth or 6
-        espSettings.teamCheck = configData.espSettings.teamCheck or false
-        espSettings.visibleCheck = configData.espSettings.visibleCheck or false
-        -- boxFill НЕ ЗАГРУЖАЕМ!
-        -- espSettings.boxFill = configData.espSettings.boxFill or false
-        -- espSettings.boxFillColor = configData.espSettings.boxFillColor
-        -- espSettings.boxFillTrans = configData.espSettings.boxFillTrans
+local function loadSettings()
+    local settings = getgenv()[saveKey]
+    if not settings then
+        print("[AutoSave] Настроек не найдено")
+        return
     end
     
-    if configData.espBoxColor then
-        espBoxColor = Color3.new(configData.espBoxColor[1], configData.espBoxColor[2], configData.espBoxColor[3])
+    print("[AutoSave] Настройки загружены для PlaceId:", placeId)
+    
+    speedhackEnabled = settings.speedhack or false
+    currentSpeed = settings.speedValue or 16
+    speedMethod = settings.speedMethod or "WalkSpeed"
+    noFallActive = settings.noFall or false
+    currentJump = settings.jumphack or 50
+    infJumpActive = settings.infJump or false
+    flyActive = settings.fly or false
+    flySpeed = settings.flySpeed or 50
+    airSwimActive = settings.airSwim or false
+    airSwimSpeed = settings.airSwimSpeed or 30
+    noclipActive = settings.noclip or false
+    espSettings.box = settings.espBox or false
+    espSettings.skeleton = settings.espSkeleton or false
+    espSettings.tracer = settings.espTracer or false
+    espSettings.hpbar = settings.espHpbar or false
+    espSettings.name = settings.espName or false
+    espSettings.teamCheck = settings.espTeamCheck or false
+    espSettings.visibleCheck = settings.espVisibleCheck or false
+    
+    if settings.espBoxColor then
+        espBoxColor = Color3.fromRGB(settings.espBoxColor[1], settings.espBoxColor[2], settings.espBoxColor[3])
     end
-    espBoxTransparency = configData.espBoxTransparency or 0
-    espBoxThickness = configData.espBoxThickness or 2
-    if configData.espSkeletonColor then
-        espSkeletonColor = Color3.new(configData.espSkeletonColor[1], configData.espSkeletonColor[2], configData.espSkeletonColor[3])
+    espBoxTransparency = settings.espBoxTransparency or 0
+    espBoxThickness = settings.espBoxThickness or 2
+    
+    if settings.espSkeletonColor then
+        espSkeletonColor = Color3.fromRGB(settings.espSkeletonColor[1], settings.espSkeletonColor[2], settings.espSkeletonColor[3])
     end
-    espSkeletonThickness = configData.espSkeletonThickness or 2
-    espSkeletonTransparency = configData.espSkeletonTransparency or 0
-    if configData.espTracerColor then
-        espTracerColor = Color3.new(configData.espTracerColor[1], configData.espTracerColor[2], configData.espTracerColor[3])
+    espSkeletonTransparency = settings.espSkeletonTransparency or 0
+    espSkeletonThickness = settings.espSkeletonThickness or 2
+    
+    if settings.espTracerColor then
+        espTracerColor = Color3.fromRGB(settings.espTracerColor[1], settings.espTracerColor[2], settings.espTracerColor[3])
     end
-    espTracerThickness = configData.espTracerThickness or 2
-    espTracerTransparency = configData.espTracerTransparency or 0
-    if configData.espHpColor then
-        espHpColor = Color3.new(configData.espHpColor[1], configData.espHpColor[2], configData.espHpColor[3])
+    espTracerTransparency = settings.espTracerTransparency or 0
+    espTracerThickness = settings.espTracerThickness or 2
+    
+    if settings.espHpColor then
+        espHpColor = Color3.fromRGB(settings.espHpColor[1], settings.espHpColor[2], settings.espHpColor[3])
     end
-    espHpTransparency = configData.espHpTransparency or 0
-    if configData.espNameColor then
-        espNameColor = Color3.new(configData.espNameColor[1], configData.espNameColor[2], configData.espNameColor[3])
+    espHpTransparency = settings.espHpTransparency or 0
+    espSettings.hpBarWidth = settings.espHpBarWidth or 6
+    
+    if settings.espNameColor then
+        espNameColor = Color3.fromRGB(settings.espNameColor[1], settings.espNameColor[2], settings.espNameColor[3])
     end
-    espNameSize = configData.espNameSize or 16
-    espNameOutline = configData.espNameOutline or 1
-    espNameTransparency = configData.espNameTransparency or 0
-
-    chamsEnabled = configData.chamsEnabled or false
-    if configData.chamsColor then
-        chamsColor = Color3.new(configData.chamsColor[1], configData.chamsColor[2], configData.chamsColor[3])
+    espNameSize = settings.espNameSize or 16
+    espNameOutline = settings.espNameOutline or 1
+    espNameTransparency = settings.espNameTransparency or 0
+    
+    chamsEnabled = settings.chamsEnabled or false
+    if settings.chamsColor then
+        chamsColor = Color3.fromRGB(settings.chamsColor[1], settings.chamsColor[2], settings.chamsColor[3])
     end
-    chamsStyle = configData.chamsStyle or "original"
-    chamsFillTrans = configData.chamsFillTrans or 0.3
-    chamsOutlineTrans = configData.chamsOutlineTrans or 0.5
-    chamsVisibleCheck = configData.chamsVisibleCheck or false
-
-    aimbotEnabled = configData.aimbotEnabled or false
-    aimbotFOV = configData.aimbotFOV or 30
-    aimbotSmoothness = configData.aimbotSmoothness or 1
-    aimbotHitbox = configData.aimbotHitbox or "Head"
-    aimbotMode = configData.aimbotMode or "camera"
-    teamCheckEnabled = (configData.teamCheckEnabled == nil) and true or configData.teamCheckEnabled
-    aimbotVisibleCheck = configData.aimbotVisibleCheck or false
-    if configData.fovColor then
-        fovColor = Color3.new(configData.fovColor[1], configData.fovColor[2], configData.fovColor[3])
+    chamsStyle = settings.chamsStyle or "original"
+    chamsFillTrans = settings.chamsFillTrans or 0.3
+    chamsOutlineTrans = settings.chamsOutlineTrans or 0.5
+    chamsVisibleCheck = settings.chamsVisibleCheck or false
+    
+    aimbotEnabled = settings.aimbotEnabled or false
+    aimbotFOV = settings.aimbotFOV or 30
+    aimbotSmoothness = settings.aimbotSmoothness or 1
+    aimbotHitbox = settings.aimbotHitbox or "Head"
+    aimbotMode = settings.aimbotMode or "camera"
+    if settings.fovColor then
+        fovColor = Color3.fromRGB(settings.fovColor[1], settings.fovColor[2], settings.fovColor[3])
     end
-    fovTransparency = configData.fovTransparency or 0.5
-
-    fovChangerEnabled = configData.fovChangerEnabled or false
-    fovValue = configData.fovValue or 70
-
-    customAnimationsEnabled = configData.customAnimationsEnabled or false
-    currentAnimPack = configData.currentAnimPack or "Zombie"
+    fovTransparency = settings.fovTransparency or 0.5
+    teamCheckEnabled = settings.teamCheckEnabled or true
+    aimbotVisibleCheck = settings.aimbotVisibleCheck or false
+    predictionEnabled = settings.predictionEnabled or false
+    predictionMultiplier = settings.predictionMultiplier or 0.5
+    
+    fovChangerEnabled = settings.fovChangerEnabled or false
+    fovValue = settings.fovValue or 70
+    fakeJumpActive = settings.fakeJump or false
+    spinBotActive = settings.spinBot or false
+    spinSpeed = settings.spinSpeed or 50
+    
+    customAnimationsEnabled = settings.customAnimations or false
+    currentAnimPack = settings.currentAnimPack or "Zombie"
 end
 
-local function applyAutosaveFull()
-    -- Применяем сохранённые настройки (НЕ ТРОГАЕМ ESP ОБЪЕКТЫ)
-    applyAutosave()
+loadSettings()
 
-    local player = game.Players.LocalPlayer
-    if player and player.Character then
-        pcall(function()
-            applySpeed(player.Character)
-            applyJump(player.Character)
-        end)
-    end
-
-    if noFallActive then
-        pcall(function()
-            local lp = game.Players.LocalPlayer
-            local rs = game:GetService("RunService")
-            local hb = rs.Heartbeat
-            local rsd = rs.RenderStepped
-            local z = Vector3.zero
-            local function protectCharacter(character)
-                local hrp = character and character:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end;
-                local con = hb:Connect(function()
-                    if not hrp.Parent then con:Disconnect() return end;
-                    local v = hrp.AssemblyLinearVelocity;
-                    hrp.AssemblyLinearVelocity = z;
-                    rsd:Wait();
-                    hrp.AssemblyLinearVelocity = v
-                end)
-                table.insert(noFallConnections, con)
-            end
-            protectCharacter(lp.Character)
-            local connAdded = lp.CharacterAdded:Connect(protectCharacter)
-            table.insert(noFallConnections, connAdded)
-        end)
-    end
-
-    if infJumpActive then
-        pcall(function()
-            local player = game.Players.LocalPlayer
-            local function autoJump()
-                local character = player.Character;
-                if not character then return end;
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid and humanoid.Jump then humanoid:ChangeState("Jumping") end
-            end;
-            if infJumpConnection then infJumpConnection:Disconnect() end
-            infJumpConnection = game:GetService("RunService").Heartbeat:Connect(autoJump)
-        end)
-    end
-
-    if flyActive then
-        pcall(function() startFly(game.Players.LocalPlayer.Character) end)
-    end
-
-    if airSwimActive then
-        pcall(function() startAirSwim(game.Players.LocalPlayer.Character) end)
-    end
-
-    if noclipActive then
-        pcall(function()
-            setupNoclip(game.Players.LocalPlayer.Character)
-            if not noclipCharAdded then
-                noclipCharAdded = game.Players.LocalPlayer.CharacterAdded:Connect(function(character)
-                    setupNoclip(character)
-                end)
-            end
-        end)
-    end
-
-    if chamsEnabled then
-        pcall(function()
-            updateChams()
-            if chamsVisibleCheck then startVisibilityUpdate() end
-        end)
-    end
-
-    if aimbotEnabled then
-        pcall(function() toggleAimbot(true) end)
-    end
-
-    if fovChangerEnabled then
-        pcall(function()
-            applyFOV(fovValue)
-            startFOVUpdate()
-        end)
-    end
-
-    if customAnimationsEnabled then
-        pcall(function()
-            local character = game.Players.LocalPlayer.Character
-            if character then
-                local saved = player:GetAttribute(ATTR_LAST)
-                if type(saved) == "string" and saved ~= "" and PACKS[saved] then
-                    applyPack(saved)
-                else
-                    applyPack(currentAnimPack)
-                end
-            end
-        end)
-    end
-
-    -- ПРОСТО ОБНОВЛЯЕМ СОСТОЯНИЕ ESP, НЕ ПЕРЕСОЗДАЁМ И НЕ ОЧИЩАЕМ
-    pcall(function() 
-        updateEspState()
-    end)
-end
-
-local function startAutosave()
-    spawn(function()
-        while autosaveEnabled do
-            wait(autosaveInterval)
-            pcall(saveAutosave)
-        end
-    end)
-end
-
-local function onPlayerRemoving()
-    pcall(saveAutosave)
-end
-
-game.Players.LocalPlayer.CharacterAdded:Connect(function()
-    wait(1)
-    pcall(applyAutosaveFull)
+game:GetService("RunService").Heartbeat:Connect(function()
+    saveSettings()
 end)
 
-game.Players.LocalPlayer.CharacterRemoving:Connect(onPlayerRemoving)
+game.Players.LocalPlayer.CharacterRemoving:Connect(function()
+    saveSettings()
+end)
+
+pcall(function()
+    game:GetService("TeleportService").TeleportInitiated:Connect(function()
+        saveSettings()
+    end)
+end)
 
 pcall(function()
     game:BindToClose(function()
-        pcall(saveAutosave)
+        saveSettings()
     end)
 end)
 
-startAutosave()
+game:GetService("UserInputService").InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.F5 then
+        saveSettings()
+        Notification:Notify({ Title = "AutoSave", Content = "Settings saved!", Icon = "clipboard", Duration = 2 })
+    end
+end)
 
-wait(0.5)
-pcall(applyAutosaveFull)
-
-local player = game.Players.LocalPlayer
-if player.Character then
-    applySpeed(player.Character)
-    applyJump(player.Character)
-end
+print("[AutoSave] Готово! Настройки сохраняются через инжектор.")
